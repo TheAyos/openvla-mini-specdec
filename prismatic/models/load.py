@@ -26,7 +26,8 @@ overwatch = initialize_overwatch(__name__)
 
 # === HF Hub Repository ===
 HF_HUB_REPO = "TRI-ML/prismatic-vlms"
-VLA_HF_HUB_REPO = "openvla/openvla-dev"
+# VLA_HF_HUB_REPO = "openvla/openvla-dev"
+VLA_HF_HUB_REPO = ""
 
 
 # === Available Models ===
@@ -155,7 +156,9 @@ def load_vla(
     # Otherwise =>> try looking for a match on `model_id_or_path` on the HF Hub (`VLA_HF_HUB_REPO`)
     else:
         # Search HF Hub Repo via fsspec API
-        overwatch.info(f"Checking HF for `{(hf_path := str(Path(VLA_HF_HUB_REPO) / model_type / model_id_or_path))}`")
+        # overwatch.info(f"Checking HF for `{(hf_path := str(Path(VLA_HF_HUB_REPO) / model_type / model_id_or_path))}`")
+        # SRP fix
+        overwatch.info(f"Checking HF for `{(hf_path := str(model_id_or_path))}`")
         if not (tmpfs := HfFileSystem()).exists(hf_path):
             raise ValueError(f"Couldn't find valid HF Hub Path `{hf_path = }`")
 
@@ -170,15 +173,26 @@ def load_vla(
 
         overwatch.info(f"Downloading Model `{model_id_or_path}` Config & Checkpoint `{target_ckpt}`")
         with overwatch.local_zero_first():
-            relpath = Path(model_type) / model_id_or_path
+            # relpath = Path(model_type) / model_id_or_path
+            # config_json = hf_hub_download(
+            #     repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'config.json')!s}", cache_dir=cache_dir
+            # )
+            # dataset_statistics_json = hf_hub_download(
+            #     repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'dataset_statistics.json')!s}", cache_dir=cache_dir
+            # )
+            # checkpoint_pt = hf_hub_download(
+            #     repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'checkpoints' / target_ckpt)!s}", cache_dir=cache_dir
+            # )
+            relpath = model_id_or_path
+            VLA_HF_HUB_REPO = model_id_or_path
             config_json = hf_hub_download(
-                repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'config.json')!s}", cache_dir=cache_dir
+                repo_id=VLA_HF_HUB_REPO, filename=f"{('config.json')!s}", cache_dir=cache_dir
             )
             dataset_statistics_json = hf_hub_download(
-                repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'dataset_statistics.json')!s}", cache_dir=cache_dir
+                repo_id=VLA_HF_HUB_REPO, filename=f"{('dataset_statistics.json')!s}", cache_dir=cache_dir
             )
             checkpoint_pt = hf_hub_download(
-                repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'checkpoints' / target_ckpt)!s}", cache_dir=cache_dir
+                repo_id=VLA_HF_HUB_REPO, filename=f"{('checkpoints/' + target_ckpt)!s}", cache_dir=cache_dir
             )
 
     # Load VLA Config (and corresponding base VLM `ModelConfig`) from `config.json`

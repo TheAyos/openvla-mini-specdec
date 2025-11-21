@@ -267,9 +267,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
             total_episodes += 1
 
             # Save a replay video of the episode
-            save_rollout_video(
-                replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
-            )
+            #SRP comment out
+            # save_rollout_video(
+            #     replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
+            # )
 
             # Save the videos to wandb
             if cfg.use_wandb and (task_successes < 10 or task_episodes - task_successes < 10):
