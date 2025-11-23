@@ -154,4 +154,5 @@ wandb/
 
 # srp
 libero/
+!experiments/robot/libero
 ckpt/

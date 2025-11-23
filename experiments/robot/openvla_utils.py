@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 import torch
+from torch.profiler import ProfilerActivity, profile, tensorboard_trace_handler
 from PIL import Image
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
 
@@ -52,11 +53,12 @@ def get_prismatic_vla(cfg):
     vla.to(dtype=vla.llm_backbone.half_precision_dtype)
     vla.to(DEVICE)
     try:
-        vla.eval()
+        # vla.eval()
         # vla = torch.compile(vla)
         # vla = torch.compile(vla, mode="reduce-overhead", fullgraph=True)
-        vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
-        print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(prismatic) enabled\033[0m")
+        # vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
+        # print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(prismatic) enabled\033[0m")
+        print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(prismatic) DISABLED\033[0m")
     except Exception as e:
         print(f"\033[38;2;255;165;0m[SRPPPPPPPPPP] -> WARNING: torch.compile failed, error: {e}\033[0m")
     return vla
@@ -91,11 +93,12 @@ def get_vla(cfg):
     if not cfg.load_in_8bit and not cfg.load_in_4bit:
         vla = vla.to(DEVICE)
         try:
-            vla.eval()
+            # vla.eval()
             # vla = torch.compile(vla)
             # vla = torch.compile(vla, mode="reduce-overhead", fullgraph=True)
-            vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
-            print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(vla) enabled\033[0m")
+            # vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
+            # print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(vla) enabled\033[0m")
+            print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(vla) DISABLED\033[0m")
         except Exception as e:
             print(f"\033[38;2;255;165;0m[SRPPPPPPPPPP] -> WARNING: torch.compile failed, error: {e}\033[0m")
 
@@ -188,8 +191,11 @@ def apply_center_crop(im, t_h, t_w):
     return im[..., crop_h : crop_h + t_h, crop_w : crop_w + t_w, :]
 
 
-def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
-    """Generates an action with the VLA policy."""
+def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False,
+                   profile_dir=None):
+    """Generates an action with the VLA policy.
+    If ``profile_dir`` is not ``None``, a detailed torch.profiler trace of the action prediction will be written there
+    """
 
     # only supports 1 image
     if isinstance(obs["full_image"], list):
@@ -234,13 +240,42 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Process inputs.
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 
-    # Get action.
-    action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+    # optionally profile the action prediction
+    # to viz the trace, go to https://ui.perfetto.dev/ and drag the saved .json file
+    if profile_dir is not None:
+        os.makedirs(profile_dir, exist_ok=True)
+        trace_handler = tensorboard_trace_handler(profile_dir)
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            if torch.cuda.is_available()
+            else [ProfilerActivity.CPU],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+            on_trace_ready=trace_handler,
+        ) as prof:
+            action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+            prof.step()
+    else:
+        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
+
     return action
 
 
-def get_prismatic_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False, **kwargs):
-    """Generates an action with the VLA policy."""
+def get_prismatic_vla_action(
+    vla,
+    processor,
+    base_vla_name,
+    obs,
+    task_label,
+    unnorm_key,
+    center_crop=False,
+    profile_dir=None,
+    **kwargs,
+):
+    """Generates an action with the VLA policy.
+    If ``profile_dir`` is not ``None``, a detailed torch.profiler trace of the action prediction will be written there
+    """
 
     if not isinstance(obs["full_image"], list):
         obs["full_image"] = [obs["full_image"]]
@@ -275,5 +310,23 @@ def get_prismatic_vla_action(vla, processor, base_vla_name, obs, task_label, unn
     if len(processed_images) == 1:
         processed_images = processed_images[0]
 
-    action = vla.predict_action(processed_images, task_label, unnorm_key=unnorm_key, **kwargs)
+    # optionally profile the action prediction
+    # to viz the trace, go to https://ui.perfetto.dev/ and drag the saved .json file
+    if profile_dir is not None:
+        os.makedirs(profile_dir, exist_ok=True)
+        trace_handler = tensorboard_trace_handler(profile_dir)
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            if torch.cuda.is_available()
+            else [ProfilerActivity.CPU],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+            on_trace_ready=trace_handler,
+        ) as prof:
+            action = vla.predict_action(processed_images, task_label, unnorm_key=unnorm_key, **kwargs)
+            prof.step()
+    else:
+        action = vla.predict_action(processed_images, task_label, unnorm_key=unnorm_key, **kwargs)
+
     return action
