@@ -51,6 +51,14 @@ def get_prismatic_vla(cfg):
     vla.llm_backbone.to(dtype=vla.llm_backbone.half_precision_dtype)
     vla.to(dtype=vla.llm_backbone.half_precision_dtype)
     vla.to(DEVICE)
+    try:
+        vla.eval()
+        # vla = torch.compile(vla)
+        # vla = torch.compile(vla, mode="reduce-overhead", fullgraph=True)
+        vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
+        print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(prismatic) enabled\033[0m")
+    except Exception as e:
+        print(f"\033[38;2;255;165;0m[SRPPPPPPPPPP] -> WARNING: torch.compile failed, error: {e}\033[0m")
     return vla
 
 
@@ -79,8 +87,17 @@ def get_vla(cfg):
     # Move model to device.
     # Note: `.to()` is not supported for 8-bit or 4-bit bitsandbytes models, but the model will
     #       already be set to the right devices and casted to the correct dtype upon loading.
+    print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> @openvla-mini/experiments/robot/openvla_utils.py here1\033[0m")
     if not cfg.load_in_8bit and not cfg.load_in_4bit:
         vla = vla.to(DEVICE)
+        try:
+            vla.eval()
+            # vla = torch.compile(vla)
+            # vla = torch.compile(vla, mode="reduce-overhead", fullgraph=True)
+            vla = torch.compile(vla, mode="max-autotune", fullgraph=False)
+            print("\033[38;2;255;165;0m[SRPPPPPPPPPP] -> .eval() + torch.compile(vla) enabled\033[0m")
+        except Exception as e:
+            print(f"\033[38;2;255;165;0m[SRPPPPPPPPPP] -> WARNING: torch.compile failed, error: {e}\033[0m")
 
     # Load dataset stats used during finetuning (for action un-normalization).
     dataset_statistics_path = os.path.join(cfg.pretrained_checkpoint, "dataset_statistics.json")
