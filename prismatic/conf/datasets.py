@@ -19,6 +19,8 @@ from draccus import ChoiceRegistry
 
 DEFAULT_DATA_ROOT = "/tmp/datasets"
 
+os.environ["PRISMATIC_DATA_ROOT"] = ""
+
 
 @dataclass
 class DatasetConfig(ChoiceRegistry):

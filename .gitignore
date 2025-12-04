@@ -156,3 +156,4 @@ wandb/
 libero/
 !experiments/robot/libero
 ckpt/
+experiments/logs/

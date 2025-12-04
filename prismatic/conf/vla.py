@@ -154,6 +154,17 @@ class Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_90(Exp_Qwen25_DinoSigLIP_224px_0_5
     expected_world_size: int = 8
     global_batch_size: int = 256
     per_device_batch_size: int = 32
+    
+@dataclass
+class Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_Spatial(Exp_Qwen25_DinoSigLIP_224px_0_5B_OXE_Magic_Soup):
+    vla_id: str = "prism-qwen25-dinosiglip-224px+0_5b+mx-libero-spatial"
+
+    data_mix: str = "libero_spatial_no_noops"
+    base_vlm: Union[str, Path] = "/pub/scratch/aagouzoul/ovla/openvla-mini/prism-qwen25-extra-dinosiglip-224px-0_5b"
+
+    expected_world_size: int = 1 # 8
+    global_batch_size: int = 32 # 256
+    per_device_batch_size: int = 32
 
 
 @dataclass
@@ -297,6 +308,8 @@ class VLARegistry(Enum):
     QWEN25_DINOSIGLIP_224PX_WRIST_0_5B_LIBERO_90 = Exp_Qwen25_DinoSigLIP_224px_wrist_0_5B_LIBERO_90
 
     QWEN25_DINOSIGLIP_224PX_0_5B_BRIDGE = Exp_Qwen25_DinoSigLIP_224px_0_5B_Bridge
+    
+    QWEN25_DINOSIGLIP_224PX_0_5B_LIBERO_SPATIAL = Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_Spatial
 
     # === TDROID Fine-tuning Configs ===
     SIGLIP_224PX_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_TDROID_CarrotInBowl
