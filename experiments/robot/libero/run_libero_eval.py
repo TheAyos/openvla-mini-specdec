@@ -88,6 +88,8 @@ class GenerateConfig:
     wandb_entity: Optional[str] = None          # Name of entity to log under
 
     seed: int = 7                                    # Random Seed (for reproducibility)
+    
+    override_norm_stats: bool = False                #SRP: Whether to override the norm stats with custom ones
 
     # fmt: on
 
@@ -108,12 +110,42 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # Load model
     model = get_model(cfg)
 
+    # # [OpenVLA] Check that the model contains the action un-normalization key
+    # if cfg.model_family in ["openvla", "prismatic"]:
+    #     # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
+    #     # with the suffix "_no_noops" in the dataset name)
+    #     if cfg.unnorm_key not in model.norm_stats and f"{cfg.unnorm_key}_no_noops" in model.norm_stats:
+    #         cfg.unnorm_key = f"{cfg.unnorm_key}_no_noops"
+    #     assert cfg.unnorm_key in model.norm_stats, f"Action un-norm key {cfg.unnorm_key} not found in VLA `norm_stats`!"
+    
     # [OpenVLA] Check that the model contains the action un-normalization key
     if cfg.model_family in ["openvla", "prismatic"]:
-        # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
-        # with the suffix "_no_noops" in the dataset name)
-        if cfg.unnorm_key not in model.norm_stats and f"{cfg.unnorm_key}_no_noops" in model.norm_stats:
-            cfg.unnorm_key = f"{cfg.unnorm_key}_no_noops"
+        # if cfg.unnorm_key == "libero_90":
+        override_norm_stats = cfg.override_norm_stats
+        import json
+        if override_norm_stats:
+            if cfg.unnorm_key == "libero_90":
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_90_mini.json"
+                # ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_computed_libero_90.json" # SRP CUSTOM NORM_STATS
+            elif cfg.unnorm_key == "libero_spatial":
+                # ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_spatial_og_ovla.json"
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla-mini/dataset_statistics_spatial_ft.json"
+            elif cfg.unnorm_key == "libero_object":
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_object_og_ovla.json"
+            elif cfg.unnorm_key == "libero_goal":
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_goal_og_ovla.json"
+            elif cfg.unnorm_key == "libero_10":
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_10_og_ovla.json"
+            else:
+                raise ValueError("\033[38;2;255;165;0m[SRPPPPPPPPPP] ->", f"Unknown unnorm key: {cfg.unnorm_key}")
+            
+            with open(ppath, "r") as f:
+                model.norm_stats[cfg.unnorm_key] = json.load(f)[cfg.unnorm_key]
+                
+            print("\033[38;2;255;165;0m[SRPPPPPPPPPP] ->", f"loaded custom {ppath} for {cfg.unnorm_key}: ", json.dumps(model.norm_stats[cfg.unnorm_key]), "\033[0m")
+        else:
+            if cfg.unnorm_key not in model.norm_stats and f"{cfg.unnorm_key}_no_noops" in model.norm_stats:
+                cfg.unnorm_key = f"{cfg.unnorm_key}_no_noops"
         assert cfg.unnorm_key in model.norm_stats, f"Action un-norm key {cfg.unnorm_key} not found in VLA `norm_stats`!"
 
     # [OpenVLA] Get Hugging Face processor

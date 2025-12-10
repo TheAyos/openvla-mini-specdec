@@ -155,6 +155,10 @@ class Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_90(Exp_Qwen25_DinoSigLIP_224px_0_5
     global_batch_size: int = 256
     per_device_batch_size: int = 32
     
+    
+ngpu = 4
+bs = 56
+
 @dataclass
 class Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_Spatial(Exp_Qwen25_DinoSigLIP_224px_0_5B_OXE_Magic_Soup):
     vla_id: str = "prism-qwen25-dinosiglip-224px+0_5b+mx-libero-spatial"
@@ -162,9 +166,9 @@ class Exp_Qwen25_DinoSigLIP_224px_0_5B_LIBERO_Spatial(Exp_Qwen25_DinoSigLIP_224p
     data_mix: str = "libero_spatial_no_noops"
     base_vlm: Union[str, Path] = "/pub/scratch/aagouzoul/ovla/openvla-mini/prism-qwen25-extra-dinosiglip-224px-0_5b"
 
-    expected_world_size: int = 1 # 8
-    global_batch_size: int = 32 # 256
-    per_device_batch_size: int = 32
+    expected_world_size: int = ngpu # 8
+    global_batch_size: int = bs*ngpu # 256
+    per_device_batch_size: int = bs
 
 
 @dataclass

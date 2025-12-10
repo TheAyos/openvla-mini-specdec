@@ -194,7 +194,7 @@ def measure_throughput_with_single_libero_task(cfg: ThroughputConfig) -> dict:
                 task_description,
                 cfg.unnorm_key,
                 center_crop=cfg.center_crop,
-                #profile_dir="experiments/logs/prof_trace_openvla"
+                # profile_dir="experiments/logs/prof_trace_openvla_compile_max_autotune_fullgraph"
             )
     
     elif cfg.model_type == "prismatic":
@@ -210,7 +210,7 @@ def measure_throughput_with_single_libero_task(cfg: ThroughputConfig) -> dict:
                 task_description,
                 cfg.unnorm_key,
                 center_crop=cfg.center_crop,
-                #profile_dir="experiments/logs/prof_trace_prismatic"
+                # profile_dir="experiments/logs/prof_trace_prismatic_compile_max_autotune_fullgraph"
             )
 
     elif cfg.model_type == "openvla_oft":
@@ -311,9 +311,9 @@ def measure_throughput_with_single_libero_task(cfg: ThroughputConfig) -> dict:
 
 if __name__ == "__main__":
     MODELS_TO_BENCH = [
-        # ("openvla/openvla-7b", "OpenVLA-og", "openvla"),
+        ("openvla/openvla-7b", "OpenVLA-og", "openvla"),
         # ("openvla/openvla-7b-finetuned-libero-spatial", "OpenVLA-og-ft-spatial", "openvla"),
-        ("Stanford-ILIAD/minivla-libero90-prismatic", "MiniVLA-base", "prismatic"),
+        # ("Stanford-ILIAD/minivla-libero90-prismatic", "MiniVLA-base", "prismatic"),
     ]
 
     common_args = {

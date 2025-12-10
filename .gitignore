@@ -157,3 +157,6 @@ libero/
 !experiments/robot/libero
 ckpt/
 experiments/logs/
+ft_experiments_logs/
+logs/training/
+adapter-tmp/
