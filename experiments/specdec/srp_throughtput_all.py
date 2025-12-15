@@ -40,8 +40,8 @@ import torch
 # Append current directory so that interpreter can find experiments.robot
 sys.path.insert(0, "./")
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-# sys.path.append("./")
-# sys.path.append("../..")
+sys.path.append("./")
+sys.path.append("../..")
 # from experiments.robot.libero.libero_utils import get_libero_env, get_libero_image, quat2axisangle
 # from experiments.robot.openvla_utils import get_processor, get_vla
 # from experiments.robot.robot_utils import get_image_resize_size, set_seed_everywhere

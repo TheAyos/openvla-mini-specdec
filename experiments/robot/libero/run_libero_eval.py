@@ -125,7 +125,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
         import json
         if override_norm_stats:
             if cfg.unnorm_key == "libero_90":
-                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_90_mini.json"
+                ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_90_ft_ovla.json"
+                # ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_90_mini.json"
                 # ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_computed_libero_90.json" # SRP CUSTOM NORM_STATS
             elif cfg.unnorm_key == "libero_spatial":
                 # ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_spatial_og_ovla.json"
@@ -137,12 +138,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
             elif cfg.unnorm_key == "libero_10":
                 ppath = "/pub/scratch/aagouzoul/ovla/openvla/dataset_statistics_10_og_ovla.json"
             else:
-                raise ValueError("\033[38;2;255;165;0m[SRPPPPPPPPPP] ->", f"Unknown unnorm key: {cfg.unnorm_key}")
+                raise ValueError("\033[38;2;255;165;0m[SRP] ->", f"Unknown unnorm key: {cfg.unnorm_key}")
             
             with open(ppath, "r") as f:
                 model.norm_stats[cfg.unnorm_key] = json.load(f)[cfg.unnorm_key]
                 
-            print("\033[38;2;255;165;0m[SRPPPPPPPPPP] ->", f"loaded custom {ppath} for {cfg.unnorm_key}: ", json.dumps(model.norm_stats[cfg.unnorm_key]), "\033[0m")
+            print("\033[38;2;255;165;0m[SRP] ->", f"loaded custom {ppath} for {cfg.unnorm_key}: ", json.dumps(model.norm_stats[cfg.unnorm_key]), "\033[0m")
         else:
             if cfg.unnorm_key not in model.norm_stats and f"{cfg.unnorm_key}_no_noops" in model.norm_stats:
                 cfg.unnorm_key = f"{cfg.unnorm_key}_no_noops"

@@ -326,7 +326,7 @@ class PrismaticVLM(VLM):
         """Run a forward pass through the VLM, returning a CausalLMOutputWithPast instance (contains loss)."""
 
         # Handle Inference (leverage cache, short-circuit on just LLM forward)
-        if input_ids.shape[1] == 1 and past_key_values is not None:
+        if input_ids.shape[1] == 1 and past_key_values is not None: # single token generation with cache
             # We're leveraging the cache, so just redirect to `self.llm_backbone` with `input_ids` and `past_key_values`
             output = self.llm_backbone(
                 input_ids=input_ids,
@@ -342,7 +342,7 @@ class PrismaticVLM(VLM):
             )
             return output
 
-        elif input_ids.shape[1] == 1 or pixel_values is None:
+        elif input_ids.shape[1] == 1 or pixel_values is None: # single token generation without cache or text-only forward
             raise RuntimeError("Invalid `forward()` call!")
 
         # Handle Multimodal Indices is None --> pretend like the batch is fully multimodal (always image + text)!
