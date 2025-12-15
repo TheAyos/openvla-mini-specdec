@@ -191,7 +191,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
         initial_states = task_suite.get_task_init_states(task_id)
 
         # Initialize LIBERO environment and task description
-        env, task_description = get_libero_env(task, cfg.model_family, resolution=resize_size)
+        # OpenVLA uses 256 resolution (then resizes to 224), prismatic uses resize_size directly
+        env_resolution = 256 if cfg.model_family == "openvla" else resize_size
+        env, task_description = get_libero_env(task, cfg.model_family, resolution=env_resolution)
 
         # Start episodes
         task_episodes, task_successes = 0, 0
@@ -232,14 +234,14 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         continue
 
                     # Get preprocessed image
-                    img = get_libero_image(obs, resize_size)
+                    img = get_libero_image(obs, resize_size, model_family=cfg.model_family)
 
                     # Save preprocessed image for replay video
                     replay_images.append(img)
 
                     # use_wrist_image
                     if cfg.use_wrist_image:
-                        wrist_img = get_libero_image(obs, resize_size, key="robot0_eye_in_hand_image")
+                        wrist_img = get_libero_image(obs, resize_size, key="robot0_eye_in_hand_image", model_family=cfg.model_family)
                         replay_wrist_images.append(wrist_img)
 
                     # buffering #obs_history images, optionally

@@ -48,18 +48,26 @@ def resize_image(img, resize_size):
     return img
 
 
-def get_libero_image(obs, resize_size, key="agentview_image"):
+def get_libero_image(obs, resize_size, key="agentview_image", model_family="prismatic"):
     """Extracts image from observations and preprocesses it."""
     assert isinstance(resize_size, int) or isinstance(resize_size, tuple)
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
     img = obs[key]
-    img = np.flipud(img)
-    # img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
-    img = Image.fromarray(img)
-    img = img.resize(resize_size, Image.Resampling.LANCZOS)  # resize to size seen at train time
-    img = img.convert("RGB")
-    return np.array(img)
+    
+    if model_family == "openvla":
+        # OpenVLA: rotate 180 degrees and use TF resize with JPEG encode/decode
+        img = img[::-1, ::-1]
+        img = resize_image(img, resize_size)
+    else:
+        # Prismatic: vertical flip only, use PIL resize
+        img = np.flipud(img)
+        img = Image.fromarray(img)
+        img = img.resize(resize_size, Image.Resampling.LANCZOS)
+        img = img.convert("RGB")
+        img = np.array(img)
+    
+    return img
 
 
 def save_rollout_video(rollout_images, idx, success, task_description, log_file=None):
