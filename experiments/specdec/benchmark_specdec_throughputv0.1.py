@@ -1,8 +1,21 @@
 # %%
+"""
+Benchmarks inference throughput on a single LIBERO task observation
+"""
+
 import os
 os.environ['PRISMATIC_DATA_ROOT'] = ''
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
+
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Union
+
+import draccus
+import numpy as np
+import torch
 
 import sys
 # sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -13,12 +26,6 @@ from libero.libero import benchmark
 from experiments.robot.libero.libero_utils import get_libero_env, get_libero_image, quat2axisangle
 from experiments.robot.openvla_utils import get_processor, get_vla, get_prismatic_vla
 from experiments.robot.robot_utils import get_image_resize_size, set_seed_everywhere
-
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Union
-import numpy as np
-import torch
 
 assert torch.cuda.is_available(), "ERROR: CUDA not available!"
 
@@ -66,6 +73,7 @@ print("=" * 80)
 
 set_seed_everywhere(cfg.seed)
 
+# Create config objects for model loading
 class TargetConfig:
     def __init__(self, c):
         self.pretrained_checkpoint = c.target_checkpoint
@@ -951,15 +959,12 @@ compute_statistics()
 import matplotlib.pyplot as plt
 import numpy as np
 
-target_mean_baseline = np.mean(target_times)
-
 # === Plot 1: Acceptance Rate vs Relaxation Threshold ===
 # You'll need to run benchmarks with different relaxation thresholds
 # For demonstration, I'll show how to structure the code
 
 relaxation_thresholds = [0, 5, 10, 15, 20, 25, 30, 45]
 acceptance_rates = []
-speedups_r = []
 
 # Run benchmarks for each threshold
 for r in relaxation_thresholds:
@@ -983,33 +988,32 @@ for r in relaxation_thresholds:
         torch.cuda.synchronize()
     
     # Benchmark
-    times_r = []
     specdec_decoder_r.reset_stats()
     for i in range(cfg.num_iterations):
-        start = torch.cuda.Event(enable_timing=True)  
-        end = torch.cuda.Event(enable_timing=True)    
-        start.record()                                
         action, stats = specdec_decoder_r.predict_action_speculative(
             pil_image, task_description, unnorm_key_target
         )
-        end.record()                                  
         torch.cuda.synchronize()
-        times_r.append(start.elapsed_time(end) / 1000)
     
-    # Store acceptance rate and speedup
+    # Store acceptance rate
     acceptance_rates.append(specdec_decoder_r.stats.acceptance_rate)
-    mean_time_r = np.mean(times_r)                    
-    speedup_r = target_mean_baseline / mean_time_r
-    speedups_r.append(speedup_r)                      
-    print(f"  Acceptance rate: {specdec_decoder_r.stats.acceptance_rate:.2%}, Speedup: {speedup_r:.2f}x")  # MODIFY THIS LINE
+    print(f"  Acceptance rate: {specdec_decoder_r.stats.acceptance_rate:.2%}")
 
 # === Plot 2: Speedup vs Gamma ===
 gamma_values = list(range(0, 8))  # 0 to 7
 speedups = []
 acceptance_rates_gamma = []
 
+# Compute baseline (gamma=0, no speculation)
+print(f"\n{'='*80}")
+print(f"Computing baseline (no speculation)")
+print(f"{'='*80}")
+target_mean_baseline = np.mean(target_times)
+
 for gamma in gamma_values:
-    print(f"\nBenchmarking with gamma={gamma}")
+    print(f"\n{'='*80}")
+    print(f"Benchmarking with gamma={gamma}")
+    print(f"{'='*80}")
     
     if gamma == 0:
         # No speculation - just use target model
@@ -1023,7 +1027,7 @@ for gamma in gamma_values:
             target_processor=target_processor,
             gamma=gamma,
             temperature=cfg.temperature,
-            relaxed_acceptance_r=cfg.relaxed_acceptance_r,  # Use your preferred threshold
+            relaxed_acceptance_r=7,  # Use your preferred threshold
         )
         
         # Warmup
@@ -1056,45 +1060,16 @@ for gamma in gamma_values:
     print(f"  Speedup: {speedup:.2f}x, Acceptance rate: {acceptance_rate:.2%}")
 
 # %%
-# # Plot acceptance rate vs relaxation threshold
-# plt.figure(figsize=(6, 4))
-# plt.plot(relaxation_thresholds, [r * 100 for r in acceptance_rates], 
-#          marker='o', linewidth=2, markersize=8, color='#2E86AB')
-# plt.xlabel('r (bins)', fontsize=12)
-# plt.ylabel(r'$\alpha$', fontsize=12)
-# plt.title(r'$\alpha$ vs $r$ (relaxation threshold)', fontsize=12)
-# plt.grid(True, alpha=0.3)
-# plt.ylim(0, 105)
-# plt.tight_layout()
-# plt.savefig('acceptance_rate_vs_threshold.png', dpi=300, bbox_inches='tight')
-# plt.show()
-
 # Plot acceptance rate vs relaxation threshold
-fig, ax1 = plt.subplots(figsize=(6, 4))
-
-color1 = '#2E86AB'
-ax1.set_xlabel('r (bins)', fontsize=12)
-ax1.set_ylabel(r'$\alpha$', fontsize=12, color=color1)
-ax1.plot(relaxation_thresholds, acceptance_rates, 
-         marker='o', linewidth=2, markersize=8, color=color1, label='Acceptance Rate')
-ax1.tick_params(axis='y', labelcolor=color1)
-ax1.grid(True, alpha=0.3)
-ax1.set_ylim(0, max(acceptance_rates) * 1.1)
-ax1.legend(loc='lower left')
-
-# Add speedup on secondary y-axis
-ax2 = ax1.twinx()
-color2 = '#A23B72'
-ax2.set_ylabel('speedup wrt target', fontsize=12, color=color2)
-ax2.plot(relaxation_thresholds, speedups_r, marker='s', linewidth=2, markersize=8, 
-         color=color2, linestyle='--', label='Speedup')
-ax2.tick_params(axis='y', labelcolor=color2)
-ax2.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5)
-ax2.set_ylim(0.0, max(speedups_r) * 1.1)
-ax2.legend(loc='lower right')
-
-plt.title(r'$\alpha$, speedup vs $r$ (relaxation threshold)' + f' (with γ={cfg.gamma})', fontsize=12)  # MODIFY
-fig.tight_layout()  # MODIFY
+plt.figure(figsize=(6, 4))
+plt.plot(relaxation_thresholds, [r * 100 for r in acceptance_rates], 
+         marker='o', linewidth=2, markersize=8, color='#2E86AB')
+plt.xlabel('r (bins)', fontsize=12)
+plt.ylabel(r'$\alpha$', fontsize=12)
+plt.title(r'$\alpha$ vs $r$ (relaxation threshold)', fontsize=12)
+plt.grid(True, alpha=0.3)
+plt.ylim(0, 105)
+plt.tight_layout()
 plt.savefig('acceptance_rate_vs_threshold.png', dpi=300, bbox_inches='tight')
 plt.show()
 
@@ -1103,25 +1078,24 @@ fig, ax1 = plt.subplots(figsize=(6, 4))
 
 color1 = '#A23B72'
 ax1.set_xlabel(r'$\gamma$ (draft tokens per round)', fontsize=12)
-ax1.set_ylabel('speedup', fontsize=12, color=color1)
+ax1.set_ylabel('speedup wrt target', fontsize=12, color=color1)
 ax1.plot(gamma_values, speedups, marker='o', linewidth=2, markersize=8, 
          color=color1, label='Speedup')
 ax1.tick_params(axis='y', labelcolor=color1)
 ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Baseline (no speedup)')
 ax1.grid(True, alpha=0.3)
 ax1.set_xticks(gamma_values)
-ax1.set_ylim(0.0, max(speedups) * 1.1)
-ax1.legend(loc='lower right')
+ax1.set_ylim(0.0, 1.05)
 
 # acceptance rate on secondary y-axis
 ax2 = ax1.twinx()
 color2 = '#F18F01'
 ax2.set_ylabel(r'$\alpha$', fontsize=12, color=color2)
-ax2.plot(gamma_values[1:], acceptance_rates_gamma[1:], 
+ax2.plot(gamma_values, [r * 100 for r in acceptance_rates_gamma], 
          marker='s', linewidth=2, markersize=8, color=color2, 
          linestyle='--', label='Acceptance Rate')
 ax2.tick_params(axis='y', labelcolor=color2)
-ax2.set_ylim(0, max(acceptance_rates_gamma[1:]) * 1.1)
+ax2.set_ylim(0, 105)
 ax2.legend(loc='lower left')
 plt.title(r'speedup, $\alpha$ vs $\gamma$' + f' (with r={cfg.relaxed_acceptance_r})', fontsize=12)
 fig.tight_layout()
@@ -1132,764 +1106,450 @@ print("Plots saved:")
 print("  - acceptance_rate_vs_threshold.png")
 print("  - speedup_vs_gamma.png")
 
-# %%
-# === Plot 2222: Speedup vs Gamma ===
-gamma_values = list(range(0, 8))  # 0 to 7
-speedups = []
-acceptance_rates_gamma = []
-RRRR=0
-for gamma in gamma_values:
-    print(f"Benchmarking with gamma={gamma}")
-    
-    if gamma == 0:
-        # No speculation - just use target model
-        speedup = 1.0
-        acceptance_rate = 0.0
-    else:
-        # Create decoder with this gamma
-        specdec_decoder_gamma = VLASpeculativeDecoderBatchedLM(
-            target_model=target_model,
-            draft_model=draft_model,
-            target_processor=target_processor,
-            gamma=gamma,
-            temperature=cfg.temperature,
-            relaxed_acceptance_r=RRRR,
-        )
-        
-        # Warmup
-        for _ in range(cfg.warmup_iterations):
-            specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            torch.cuda.synchronize()
-        
-        # Benchmark
-        times_gamma = []
-        specdec_decoder_gamma.reset_stats()
-        for i in range(cfg.num_iterations):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-            action, stats = specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            end.record()
-            torch.cuda.synchronize()
-            times_gamma.append(start.elapsed_time(end) / 1000)
-        
-        mean_time = np.mean(times_gamma)
-        speedup = target_mean_baseline / mean_time
-        acceptance_rate = specdec_decoder_gamma.stats.acceptance_rate
-    
-    speedups.append(speedup)
-    acceptance_rates_gamma.append(acceptance_rate)
-
-# Plot speedup vs gamma
-fig, ax1 = plt.subplots(figsize=(6, 4))
-
-color1 = '#A23B72'
-ax1.set_xlabel(r'$\gamma$ (draft tokens per round)', fontsize=12)
-ax1.set_ylabel('speedup', fontsize=12, color=color1)
-ax1.plot(gamma_values, speedups, marker='o', linewidth=2, markersize=8, 
-         color=color1, label='Speedup')
-ax1.tick_params(axis='y', labelcolor=color1)
-ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Baseline (no speedup)')
-ax1.grid(True, alpha=0.3)
-ax1.set_xticks(gamma_values)
-ax1.set_ylim(0.0, max(speedups) * 1.1)
-ax1.legend(loc='lower right')
-
-# acceptance rate on secondary y-axis
-ax2 = ax1.twinx()
-color2 = '#F18F01'
-ax2.set_ylabel(r'$\alpha$', fontsize=12, color=color2)
-ax2.plot(gamma_values[1:], acceptance_rates_gamma[1:], 
-         marker='s', linewidth=2, markersize=8, color=color2, 
-         linestyle='--', label='Acceptance Rate')
-ax2.tick_params(axis='y', labelcolor=color2)
-ax2.set_ylim(0, max(acceptance_rates_gamma[1:]) * 1.1)
-ax2.legend(loc='lower left')
-plt.title(r'speedup, $\alpha$ vs $\gamma$' + f' (with r={RRRR})', fontsize=12)
-fig.tight_layout()
-plt.savefig('speedup_vs_gamma.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-# %%
-# === Plot 2222: Speedup vs Gamma ===
-gamma_values = list(range(0, 8))  # 0 to 7
-speedups = []
-acceptance_rates_gamma = []
-RRRR=3
-for gamma in gamma_values:
-    print(f"Benchmarking with gamma={gamma}")
-    
-    if gamma == 0:
-        # No speculation - just use target model
-        speedup = 1.0
-        acceptance_rate = 0.0
-    else:
-        # Create decoder with this gamma
-        specdec_decoder_gamma = VLASpeculativeDecoderBatchedLM(
-            target_model=target_model,
-            draft_model=draft_model,
-            target_processor=target_processor,
-            gamma=gamma,
-            temperature=cfg.temperature,
-            relaxed_acceptance_r=RRRR,
-        )
-        
-        # Warmup
-        for _ in range(cfg.warmup_iterations):
-            specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            torch.cuda.synchronize()
-        
-        # Benchmark
-        times_gamma = []
-        specdec_decoder_gamma.reset_stats()
-        for i in range(cfg.num_iterations):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-            action, stats = specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            end.record()
-            torch.cuda.synchronize()
-            times_gamma.append(start.elapsed_time(end) / 1000)
-        
-        mean_time = np.mean(times_gamma)
-        speedup = target_mean_baseline / mean_time
-        acceptance_rate = specdec_decoder_gamma.stats.acceptance_rate
-    
-    speedups.append(speedup)
-    acceptance_rates_gamma.append(acceptance_rate)
-
-# Plot speedup vs gamma
-fig, ax1 = plt.subplots(figsize=(6, 4))
-
-color1 = '#A23B72'
-ax1.set_xlabel(r'$\gamma$ (draft tokens per round)', fontsize=12)
-ax1.set_ylabel('speedup', fontsize=12, color=color1)
-ax1.plot(gamma_values, speedups, marker='o', linewidth=2, markersize=8, 
-         color=color1, label='Speedup')
-ax1.tick_params(axis='y', labelcolor=color1)
-ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Baseline (no speedup)')
-ax1.grid(True, alpha=0.3)
-ax1.set_xticks(gamma_values)
-ax1.set_ylim(0.0, max(speedups) * 1.1)
-ax1.legend(loc='lower right')
-
-# acceptance rate on secondary y-axis
-ax2 = ax1.twinx()
-color2 = '#F18F01'
-ax2.set_ylabel(r'$\alpha$', fontsize=12, color=color2)
-ax2.plot(gamma_values[1:], acceptance_rates_gamma[1:], 
-         marker='s', linewidth=2, markersize=8, color=color2, 
-         linestyle='--', label='Acceptance Rate')
-ax2.tick_params(axis='y', labelcolor=color2)
-ax2.set_ylim(0, max(acceptance_rates_gamma[1:]) * 1.1)
-ax2.legend(loc='lower left')
-plt.title(r'speedup, $\alpha$ vs $\gamma$' + f' (with r={RRRR})', fontsize=12)
-fig.tight_layout()
-plt.savefig('speedup_vs_gamma.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-# %%
-# === Plot 2222: Speedup vs Gamma ===
-gamma_values = list(range(0, 8))  # 0 to 7
-speedups = []
-acceptance_rates_gamma = []
-RRRR=15
-for gamma in gamma_values:
-    print(f"Benchmarking with gamma={gamma}")
-    
-    if gamma == 0:
-        # No speculation - just use target model
-        speedup = 1.0
-        acceptance_rate = 0.0
-    else:
-        # Create decoder with this gamma
-        specdec_decoder_gamma = VLASpeculativeDecoderBatchedLM(
-            target_model=target_model,
-            draft_model=draft_model,
-            target_processor=target_processor,
-            gamma=gamma,
-            temperature=cfg.temperature,
-            relaxed_acceptance_r=RRRR,
-        )
-        
-        # Warmup
-        for _ in range(cfg.warmup_iterations):
-            specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            torch.cuda.synchronize()
-        
-        # Benchmark
-        times_gamma = []
-        specdec_decoder_gamma.reset_stats()
-        for i in range(cfg.num_iterations):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-            action, stats = specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            end.record()
-            torch.cuda.synchronize()
-            times_gamma.append(start.elapsed_time(end) / 1000)
-        
-        mean_time = np.mean(times_gamma)
-        speedup = target_mean_baseline / mean_time
-        acceptance_rate = specdec_decoder_gamma.stats.acceptance_rate
-    
-    speedups.append(speedup)
-    acceptance_rates_gamma.append(acceptance_rate)
-
-# Plot speedup vs gamma
-fig, ax1 = plt.subplots(figsize=(6, 4))
-
-color1 = '#A23B72'
-ax1.set_xlabel(r'$\gamma$ (draft tokens per round)', fontsize=12)
-ax1.set_ylabel('speedup', fontsize=12, color=color1)
-ax1.plot(gamma_values, speedups, marker='o', linewidth=2, markersize=8, 
-         color=color1, label='Speedup')
-ax1.tick_params(axis='y', labelcolor=color1)
-ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Baseline (no speedup)')
-ax1.grid(True, alpha=0.3)
-ax1.set_xticks(gamma_values)
-ax1.set_ylim(0.0, max(speedups) * 1.1)
-ax1.legend(loc='lower right')
-
-# acceptance rate on secondary y-axis
-ax2 = ax1.twinx()
-color2 = '#F18F01'
-ax2.set_ylabel(r'$\alpha$', fontsize=12, color=color2)
-ax2.plot(gamma_values[1:], acceptance_rates_gamma[1:], 
-         marker='s', linewidth=2, markersize=8, color=color2, 
-         linestyle='--', label='Acceptance Rate')
-ax2.tick_params(axis='y', labelcolor=color2)
-ax2.set_ylim(0, max(acceptance_rates_gamma[1:]) * 1.1)
-ax2.legend(loc='lower left')
-plt.title(r'speedup, $\alpha$ vs $\gamma$' + f' (with r={RRRR})', fontsize=12)
-fig.tight_layout()
-plt.savefig('speedup_vs_gamma.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-# %%
-# === Plot 2222: Speedup vs Gamma ===
-gamma_values = list(range(0, 8))  # 0 to 7
-speedups = []
-acceptance_rates_gamma = []
-RRRR=255
-for gamma in gamma_values:
-    print(f"Benchmarking with gamma={gamma}")
-    
-    if gamma == 0:
-        # No speculation - just use target model
-        speedup = 1.0
-        acceptance_rate = 0.0
-    else:
-        # Create decoder with this gamma
-        specdec_decoder_gamma = VLASpeculativeDecoderBatchedLM(
-            target_model=target_model,
-            draft_model=draft_model,
-            target_processor=target_processor,
-            gamma=gamma,
-            temperature=cfg.temperature,
-            relaxed_acceptance_r=RRRR,
-        )
-        
-        # Warmup
-        for _ in range(cfg.warmup_iterations):
-            specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            torch.cuda.synchronize()
-        
-        # Benchmark
-        times_gamma = []
-        specdec_decoder_gamma.reset_stats()
-        for i in range(cfg.num_iterations):
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-            action, stats = specdec_decoder_gamma.predict_action_speculative(
-                pil_image, task_description, unnorm_key_target
-            )
-            end.record()
-            torch.cuda.synchronize()
-            times_gamma.append(start.elapsed_time(end) / 1000)
-        
-        mean_time = np.mean(times_gamma)
-        speedup = target_mean_baseline / mean_time
-        acceptance_rate = specdec_decoder_gamma.stats.acceptance_rate
-    
-    speedups.append(speedup)
-    acceptance_rates_gamma.append(acceptance_rate)
-
-# Plot speedup vs gamma
-fig, ax1 = plt.subplots(figsize=(6, 4))
-
-color1 = '#A23B72'
-ax1.set_xlabel(r'$\gamma$ (draft tokens per round)', fontsize=12)
-ax1.set_ylabel('speedup', fontsize=12, color=color1)
-ax1.plot(gamma_values, speedups, marker='o', linewidth=2, markersize=8, 
-         color=color1, label='Speedup')
-ax1.tick_params(axis='y', labelcolor=color1)
-ax1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Baseline (no speedup)')
-ax1.grid(True, alpha=0.3)
-ax1.set_xticks(gamma_values)
-ax1.set_ylim(0.0, max(speedups) * 1.1)
-ax1.legend(loc='lower right')
-
-# acceptance rate on secondary y-axis
-ax2 = ax1.twinx()
-color2 = '#F18F01'
-ax2.set_ylabel(r'$\alpha$', fontsize=12, color=color2)
-ax2.plot(gamma_values[1:], acceptance_rates_gamma[1:], 
-         marker='s', linewidth=2, markersize=8, color=color2, 
-         linestyle='--', label='Acceptance Rate')
-ax2.tick_params(axis='y', labelcolor=color2)
-ax2.set_ylim(0, max(acceptance_rates_gamma[1:]) * 1.1)
-ax2.legend(loc='lower left')
-plt.title(r'speedup, $\alpha$ vs $\gamma$' + f' (with r={RRRR})', fontsize=12)
-fig.tight_layout()
-plt.savefig('speedup_vs_gamma.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-# %%
-
-
 # %% [markdown]
-# ### LIBERO Rollout Benchmark (v0, broken for target, always has 0% SR)
+# ### LIBERO Rollout Benchmark
 
 # %%
 
-# # LIBERO Rollout Benchmark
-# # Evaluates speculative decoding through complete rollouts with success rate tracking
+# LIBERO Rollout Benchmark
+# Evaluates speculative decoding through complete rollouts with success rate tracking
 
 
-# import time
-# from dataclasses import dataclass, field
-# from typing import List, Optional
-# from tqdm.auto import tqdm
+import time
+from dataclasses import dataclass, field
+from typing import List, Optional
 
-# from libero.libero import benchmark
+from libero.libero import benchmark
 
-# from experiments.robot.libero.libero_utils import (
-#     get_libero_dummy_action,
-#     get_libero_env,
-#     get_libero_image,
-#     quat2axisangle,
-# )
-# from experiments.robot.robot_utils import (
-#     invert_gripper_action,
-#     normalize_gripper_action,
-#     set_seed_everywhere,
-# )
+from experiments.robot.libero.libero_utils import (
+    get_libero_dummy_action,
+    get_libero_env,
+    get_libero_image,
+    quat2axisangle,
+)
+from experiments.robot.robot_utils import (
+    invert_gripper_action,
+    normalize_gripper_action,
+    set_seed_everywhere,
+)
 
 
-# # Configuration
-# @dataclass
-# class RolloutBenchmarkConfig:
-#     """Configuration for LIBERO rollout benchmarking."""
-    
-#     task_ids: Optional[List[int]] = field(default_factory=lambda: [0, 1, 2])  # None = all tasks or list with task ids
-#     #task 2:put_the_black_bowl_in_the_top_drawer_of_the_cabine, had 100% success rate with openvla
-    
-#     # Number of rollouts (trials) per task
-#     num_trials_per_task: int = 1  # Increase for more reliable success rate estimates
-    
-#     # what to compare: ["specdec"], ["target"], ["specdec", "target"], ["specdec", "target", "draft"]
-#     eval_modes: List[str] = field(default_factory=lambda: ["target"])
-    
-#     # Speculative decoding parameters (for specdec mode)
-#     gamma: int = 7
-#     relaxed_acceptance_r: int = 7
-#     temperature: float = 0.0
-    
-#     # Environment parameters
-#     task_suite_name: str = "libero_90"
-#     num_steps_wait: int = 10  # Steps to wait for sim stabilization
-#     max_episode_steps: Optional[int] = None  # None = use default for suite
-    
-#     # Random seed
-#     seed: int = 7
-    
-# rollout_cfg = RolloutBenchmarkConfig()
+# Configuration
 
-# def get_max_steps(task_suite_name: str) -> int:
-#     """Get maximum episode steps for a task suite."""
-#     max_steps_dict = {
-#         "libero_spatial": 220,
-#         "libero_object": 280,
-#         "libero_goal": 300,
-#         "libero_10": 520,
-#         "libero_90": 400,
-#     }
-#     return max_steps_dict.get(task_suite_name, 400)
 
-# @dataclass
-# class RolloutResults:
-#     """Results from rollout evaluation."""
-#     mode: str
-#     task_id: int
-#     task_description: str
-#     trial_idx: int
-#     success: bool
-#     num_steps: int
-#     inference_times: List[float]
-#     # Specdec-specific
-#     acceptance_rate: Optional[float] = None
-#     tokens_per_target_forward: Optional[float] = None
-#     total_tokens_generated: int = 0
-#     total_draft_tokens_proposed: int = 0
-#     total_draft_tokens_accepted: int = 0
-#     total_target_forward_passes: int = 0
-#     total_draft_forward_passes: int = 0
+@dataclass
+class RolloutBenchmarkConfig:
+    """Configuration for LIBERO rollout benchmarking."""
+    
+    # Option 1: Single task - set task_ids to a single integer, e.g., [0]
+    # Option 2: Multiple specific tasks - set task_ids to a list, e.g., [0, 5, 10, 15]
+    # Option 3: Full suite - set task_ids to None (will run all tasks in suite)
+    
+    task_ids: Optional[List[int]] = [2], # 2:put_the_black_bowl_in_the_top_drawer_of_the_cabine, had 100% success rate with openvla
+    
+    num_trials_per_task: int = 5
+    
+    # what to compare
+    # Options: ["specdec"], ["target"], ["specdec", "target"], ["specdec", "target", "draft"]
+    eval_modes: List[str] = field(default_factory=lambda: ["specdec", "target"])
+    
+    # Speculative decoding parameters (for specdec mode)
+    gamma: int = 7
+    relaxed_acceptance_r: int = 7
+    temperature: float = 0.0
+    
+    # Environment parameters
+    task_suite_name: str = "libero_90"
+    num_steps_wait: int = 10  # Steps to wait for sim stabilization
+    max_episode_steps: Optional[int] = None  # None = use default for suite
+    
+    # Random seed
+    seed: int = 42
 
-# def run_single_rollout(
-#     env,
-#     task_description: str,
-#     initial_state,
-#     mode: str,
-#     rollout_cfg: RolloutBenchmarkConfig,
-# ) -> RolloutResults:
-#     env.reset()
-#     obs = env.set_init_state(initial_state)
+rollout_cfg = RolloutBenchmarkConfig()
+
+def get_max_steps(task_suite_name: str) -> int:
+    """Get maximum episode steps for a task suite."""
+    max_steps_dict = {
+        "libero_spatial": 220,
+        "libero_object": 280,
+        "libero_goal": 300,
+        "libero_10": 520,
+        "libero_90": 400,
+    }
+    return max_steps_dict.get(task_suite_name, 400)
+
+@dataclass
+class RolloutResults:
+    """Results from rollout evaluation."""
+    mode: str
+    task_id: int
+    task_description: str
+    trial_idx: int
+    success: bool
+    num_steps: int
+    inference_times: List[float]
+    # Specdec-specific
+    acceptance_rate: Optional[float] = None
+    tokens_per_target_forward: Optional[float] = None
+    total_tokens_generated: int = 0
+    total_draft_tokens_proposed: int = 0
+    total_draft_tokens_accepted: int = 0
+    total_target_forward_passes: int = 0
+    total_draft_forward_passes: int = 0
+
+# Core rollout function
+
+def run_single_rollout(
+    env,
+    task_description: str,
+    initial_state,
+    mode: str,
+    rollout_cfg: RolloutBenchmarkConfig,
+) -> RolloutResults:
+    """Run a single episode/rollout."""
     
-#     max_steps = rollout_cfg.max_episode_steps or get_max_steps(rollout_cfg.task_suite_name)
-#     resize_size = 224
+    env.reset()
+    obs = env.set_init_state(initial_state)
     
-#     t = 0
-#     inference_times = []
+    max_steps = rollout_cfg.max_episode_steps or get_max_steps(rollout_cfg.task_suite_name)
+    resize_size = 224
     
-#     # For specdec stats
-#     total_tokens_generated = 0
-#     total_draft_tokens_proposed = 0
-#     total_draft_tokens_accepted = 0
-#     total_target_forward_passes = 0
-#     total_draft_forward_passes = 0
+    t = 0
+    inference_times = []
     
-#     while t < max_steps + rollout_cfg.num_steps_wait:
-#         # Wait for sim stabilization
-#         if t < rollout_cfg.num_steps_wait:
-#             obs, reward, done, info = env.step(get_libero_dummy_action("openvla"))
-#             t += 1
-#             continue
+    # For specdec stats
+    total_tokens_generated = 0
+    total_draft_tokens_proposed = 0
+    total_draft_tokens_accepted = 0
+    total_target_forward_passes = 0
+    total_draft_forward_passes = 0
+    
+    while t < max_steps + rollout_cfg.num_steps_wait:
+        # Wait for sim stabilization
+        if t < rollout_cfg.num_steps_wait:
+            obs, reward, done, info = env.step(get_libero_dummy_action("openvla"))
+            t += 1
+            continue
         
-#         # Get image observation
-#         img = get_libero_image(obs, resize_size)
-#         observation = {
-#             "full_image": img,
-#             "state": np.concatenate(
-#                 (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
-#             ),
-#         }
+        # Get image observation
+        img = get_libero_image(obs, resize_size)
+        observation = {
+            "full_image": img,
+            "state": np.concatenate(
+                (obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"])
+            ),
+        }
         
-#         # Get action based on mode
-#         start_time = time.time()
+        # Get action based on mode
+        start_time = time.time()
         
-#         if mode == "specdec":
-#             pil_img = prepare_image(observation["full_image"], center_crop=cfg.center_crop)
-#             action, stats = specdec_decoder.predict_action_speculative(
-#                 pil_img, task_description, unnorm_key_target
-#             )
-#             total_tokens_generated += stats.total_tokens_generated
-#             total_draft_tokens_proposed += stats.total_draft_tokens_proposed
-#             total_draft_tokens_accepted += stats.total_draft_tokens_accepted
-#             total_target_forward_passes += stats.total_target_forward_passes
-#             total_draft_forward_passes += stats.total_draft_forward_passes
+        if mode == "specdec":
+            pil_img = prepare_image(observation["full_image"], center_crop=cfg.center_crop)
+            action, stats = specdec_decoder.predict_action_speculative(
+                pil_img, task_description, unnorm_key_target
+            )
+            total_tokens_generated += stats.total_tokens_generated
+            total_draft_tokens_proposed += stats.total_draft_tokens_proposed
+            total_draft_tokens_accepted += stats.total_draft_tokens_accepted
+            total_target_forward_passes += stats.total_target_forward_passes
+            total_draft_forward_passes += stats.total_draft_forward_passes
             
-#         elif mode == "target":
-#             action = run_target_inference_obs(observation, task_description)
+        elif mode == "target":
+            action = run_target_inference_obs(observation, task_description)
             
-#         elif mode == "draft":
-#             action = run_draft_inference_obs(observation, task_description)
+        elif mode == "draft":
+            action = run_draft_inference_obs(observation, task_description)
         
-#         torch.cuda.synchronize()
-#         inference_times.append(time.time() - start_time)
+        torch.cuda.synchronize()
+        inference_times.append(time.time() - start_time)
         
-#         # Post-process action
-#         action = normalize_gripper_action(action, binarize=True)
-#         action = invert_gripper_action(action)
+        # Post-process action
+        action = normalize_gripper_action(action, binarize=True)
+        action = invert_gripper_action(action)
         
-#         # Step environment
-#         obs, reward, done, info = env.step(action.tolist())
+        # Step environment
+        obs, reward, done, info = env.step(action.tolist())
         
-#         if done:
-#             # Success!
-#             acceptance_rate = None
-#             tokens_per_fwd = None
-#             if mode == "specdec" and total_draft_tokens_proposed > 0:
-#                 acceptance_rate = total_draft_tokens_accepted / total_draft_tokens_proposed
-#             if mode == "specdec" and total_target_forward_passes > 0:
-#                 tokens_per_fwd = total_tokens_generated / total_target_forward_passes
+        if done:
+            # Success!
+            acceptance_rate = None
+            tokens_per_fwd = None
+            if mode == "specdec" and total_draft_tokens_proposed > 0:
+                acceptance_rate = total_draft_tokens_accepted / total_draft_tokens_proposed
+            if mode == "specdec" and total_target_forward_passes > 0:
+                tokens_per_fwd = total_tokens_generated / total_target_forward_passes
             
-#             return RolloutResults(
-#                 mode=mode,
-#                 task_id=-1,  # Will be set by caller
-#                 task_description=task_description,
-#                 trial_idx=-1,  # Will be set by caller
-#                 success=True,
-#                 num_steps=t - rollout_cfg.num_steps_wait + 1,
-#                 inference_times=inference_times,
-#                 acceptance_rate=acceptance_rate,
-#                 tokens_per_target_forward=tokens_per_fwd,
-#                 total_tokens_generated=total_tokens_generated,
-#                 total_draft_tokens_proposed=total_draft_tokens_proposed,
-#                 total_draft_tokens_accepted=total_draft_tokens_accepted,
-#                 total_target_forward_passes=total_target_forward_passes,
-#                 total_draft_forward_passes=total_draft_forward_passes,
-#             )
+            return RolloutResults(
+                mode=mode,
+                task_id=-1,  # Will be set by caller
+                task_description=task_description,
+                trial_idx=-1,  # Will be set by caller
+                success=True,
+                num_steps=t - rollout_cfg.num_steps_wait + 1,
+                inference_times=inference_times,
+                acceptance_rate=acceptance_rate,
+                tokens_per_target_forward=tokens_per_fwd,
+                total_tokens_generated=total_tokens_generated,
+                total_draft_tokens_proposed=total_draft_tokens_proposed,
+                total_draft_tokens_accepted=total_draft_tokens_accepted,
+                total_target_forward_passes=total_target_forward_passes,
+                total_draft_forward_passes=total_draft_forward_passes,
+            )
         
-#         t += 1
+        t += 1
     
-#     # ended without success
-#     acceptance_rate = None
-#     tokens_per_fwd = None
-#     if mode == "specdec" and total_draft_tokens_proposed > 0:
-#         acceptance_rate = total_draft_tokens_accepted / total_draft_tokens_proposed
-#     if mode == "specdec" and total_target_forward_passes > 0:
-#         tokens_per_fwd = total_tokens_generated / total_target_forward_passes
+    # Episode ended without success
+    acceptance_rate = None
+    tokens_per_fwd = None
+    if mode == "specdec" and total_draft_tokens_proposed > 0:
+        acceptance_rate = total_draft_tokens_accepted / total_draft_tokens_proposed
+    if mode == "specdec" and total_target_forward_passes > 0:
+        tokens_per_fwd = total_tokens_generated / total_target_forward_passes
     
-#     return RolloutResults(
-#         mode=mode,
-#         task_id=-1,
-#         task_description=task_description,
-#         trial_idx=-1,
-#         success=False,
-#         num_steps=max_steps,
-#         inference_times=inference_times,
-#         acceptance_rate=acceptance_rate,
-#         tokens_per_target_forward=tokens_per_fwd,
-#         total_tokens_generated=total_tokens_generated,
-#         total_draft_tokens_proposed=total_draft_tokens_proposed,
-#         total_draft_tokens_accepted=total_draft_tokens_accepted,
-#         total_target_forward_passes=total_target_forward_passes,
-#         total_draft_forward_passes=total_draft_forward_passes,
-#     )
+    return RolloutResults(
+        mode=mode,
+        task_id=-1,
+        task_description=task_description,
+        trial_idx=-1,
+        success=False,
+        num_steps=max_steps,
+        inference_times=inference_times,
+        acceptance_rate=acceptance_rate,
+        tokens_per_target_forward=tokens_per_fwd,
+        total_tokens_generated=total_tokens_generated,
+        total_draft_tokens_proposed=total_draft_tokens_proposed,
+        total_draft_tokens_accepted=total_draft_tokens_accepted,
+        total_target_forward_passes=total_target_forward_passes,
+        total_draft_forward_passes=total_draft_forward_passes,
+    )
 
-# def run_target_inference_obs(observation, task_description):
-#     """Run target model inference on observation."""
-#     from experiments.robot.openvla_utils import get_vla_action
-#     return get_vla_action(
-#         target_model,
-#         target_processor,
-#         str(cfg.target_checkpoint),
-#         observation,
-#         task_description,
-#         unnorm_key_target,
-#         center_crop=cfg.center_crop,
-#     )
+# Helper functions for target/draft inference
 
-# def run_draft_inference_obs(observation, task_description):
-#     """Run draft model inference on observation."""
-#     from experiments.robot.openvla_utils import get_prismatic_vla_action
-#     return get_prismatic_vla_action(
-#         draft_model,
-#         None,
-#         str(cfg.draft_checkpoint),
-#         observation,
-#         task_description,
-#         unnorm_key_draft,
-#         center_crop=cfg.center_crop,
-#     )
+def run_target_inference_obs(observation, task_description):
+    """Run target model inference on observation."""
+    from experiments.robot.openvla_utils import get_vla_action
+    return get_vla_action(
+        target_model,
+        target_processor,
+        str(cfg.target_checkpoint),
+        observation,
+        task_description,
+        unnorm_key_target,
+        center_crop=cfg.center_crop,
+    )
 
-# # Main benchmark function
-# def run_libero_rollout_benchmark(rollout_cfg: RolloutBenchmarkConfig) -> dict:
-#     """
-#     Run comprehensive LIBERO rollout benchmark.
+def run_draft_inference_obs(observation, task_description):
+    """Run draft model inference on observation."""
+    from experiments.robot.openvla_utils import get_prismatic_vla_action
+    return get_prismatic_vla_action(
+        draft_model,
+        None,
+        str(cfg.draft_checkpoint),
+        observation,
+        task_description,
+        unnorm_key_draft,
+        center_crop=cfg.center_crop,
+    )
+
+# Main benchmark function
+
+from tqdm.auto import tqdm
+def run_libero_rollout_benchmark(rollout_cfg: RolloutBenchmarkConfig) -> dict:
+    """
+    Run comprehensive LIBERO rollout benchmark.
     
-#     Returns dict with results for each mode.
-#     """
-#     set_seed_everywhere(rollout_cfg.seed)
+    Returns dict with results for each mode.
+    """
+    set_seed_everywhere(rollout_cfg.seed)
     
-#     global specdec_decoder
-#     specdec_decoder = VLASpeculativeDecoderBatchedLM(
-#         target_model=target_model,
-#         draft_model=draft_model,
-#         target_processor=target_processor,
-#         gamma=rollout_cfg.gamma,
-#         temperature=rollout_cfg.temperature,
-#         relaxed_acceptance_r=rollout_cfg.relaxed_acceptance_r,
-#     )
+    global specdec_decoder
+    specdec_decoder = VLASpeculativeDecoderBatchedLM(
+        target_model=target_model,
+        draft_model=draft_model,
+        target_processor=target_processor,
+        gamma=rollout_cfg.gamma,
+        temperature=rollout_cfg.temperature,
+        relaxed_acceptance_r=rollout_cfg.relaxed_acceptance_r,
+    )
     
-#     # Load task suite
-#     task_suite = benchmark.get_benchmark_dict()[rollout_cfg.task_suite_name]()
+    # Load task suite
+    task_suite = benchmark.get_benchmark_dict()[rollout_cfg.task_suite_name]()
     
-#     # Determine task IDs
-#     task_ids = list(range(task_suite.n_tasks)) if rollout_cfg.task_ids is None else rollout_cfg.task_ids
+    # Determine task IDs
+    task_ids = list(range(task_suite.n_tasks)) if rollout_cfg.task_ids is None else rollout_cfg.task_ids
     
-#     print("=" * 80)
-#     print("LIBERO ROLLOUT BENCHMARK")
-#     print("=" * 80)
-#     print(f"Task suite: {rollout_cfg.task_suite_name}")
-#     print(f"Tasks to evaluate: {len(task_ids)} tasks")
-#     print(f"Trials per task: {rollout_cfg.num_trials_per_task}")
-#     print(f"Total rollouts: {len(task_ids) * rollout_cfg.num_trials_per_task}")
-#     print(f"Modes to compare: {rollout_cfg.eval_modes}")
-#     print(f"Gamma: {rollout_cfg.gamma}, Relaxed r: {rollout_cfg.relaxed_acceptance_r}")
-#     print("=" * 80)
+    print("=" * 80)
+    print("LIBERO ROLLOUT BENCHMARK")
+    print("=" * 80)
+    print(f"Task suite: {rollout_cfg.task_suite_name}")
+    print(f"Tasks to evaluate: {len(task_ids)} tasks")
+    print(f"Trials per task: {rollout_cfg.num_trials_per_task}")
+    print(f"Total rollouts: {len(task_ids) * rollout_cfg.num_trials_per_task}")
+    print(f"Modes to compare: {rollout_cfg.eval_modes}")
+    print(f"Gamma: {rollout_cfg.gamma}, Relaxed r: {rollout_cfg.relaxed_acceptance_r}")
+    print("=" * 80)
     
-#     all_results = {mode: [] for mode in rollout_cfg.eval_modes}
+    all_results = {mode: [] for mode in rollout_cfg.eval_modes}
     
-#     for mode in rollout_cfg.eval_modes:
-#         print(f"\n{'='*80}")
-#         print(f"Evaluating: {mode.upper()}")
-#         print(f"{'='*80}")
+    for mode in rollout_cfg.eval_modes:
+        print(f"\n{'='*80}")
+        print(f"Evaluating: {mode.upper()}")
+        print(f"{'='*80}")
         
-#         for task_id in tqdm(task_ids, desc=f"{mode} tasks"):
-#             task = task_suite.get_task(task_id)
-#             initial_states = task_suite.get_task_init_states(task_id)
-#             env, task_description = get_libero_env(task, "openvla", resolution=224)
+        for task_id in tqdm(task_ids, desc=f"{mode} tasks"):
+            task = task_suite.get_task(task_id)
+            initial_states = task_suite.get_task_init_states(task_id)
+            env, task_description = get_libero_env(task, "openvla", resolution=224)
             
-#             num_trials = min(rollout_cfg.num_trials_per_task, len(initial_states))
+            num_trials = min(rollout_cfg.num_trials_per_task, len(initial_states))
             
-#             for trial_idx in range(num_trials):
-#                 result = run_single_rollout(
-#                     env,
-#                     task_description,
-#                     initial_states[trial_idx],
-#                     mode,
-#                     rollout_cfg,
-#                 )
-#                 result.task_id = task_id
-#                 result.trial_idx = trial_idx
-#                 all_results[mode].append(result)
+            for trial_idx in range(num_trials):
+                result = run_single_rollout(
+                    env,
+                    task_description,
+                    initial_states[trial_idx],
+                    mode,
+                    rollout_cfg,
+                )
+                result.task_id = task_id
+                result.trial_idx = trial_idx
+                all_results[mode].append(result)
             
-#             env.close()
+            env.close()
     
-#     return all_results
+    return all_results
 
+# Results analysis and printing
 
-# # Results analysis and printing
-
-# def analyze_and_print_results(all_results: dict):
-#     """Analyze and print comprehensive results."""
+def analyze_and_print_results(all_results: dict):
+    """Analyze and print comprehensive results."""
     
-#     print("\n" + "=" * 80)
-#     print("ROLLOUT BENCHMARK RESULTS")
-#     print("=" * 80)
+    print("\n" + "=" * 80)
+    print("ROLLOUT BENCHMARK RESULTS")
+    print("=" * 80)
     
-#     summary = {}
+    summary = {}
     
-#     for mode, results in all_results.items():
-#         if not results:
-#             continue
+    for mode, results in all_results.items():
+        if not results:
+            continue
             
-#         # Aggregate metrics
-#         total_episodes = len(results)
-#         total_successes = sum(1 for r in results if r.success)
-#         total_steps = sum(r.num_steps for r in results)
-#         total_inference_time = sum(sum(r.inference_times) for r in results)
+        # Aggregate metrics
+        total_episodes = len(results)
+        total_successes = sum(1 for r in results if r.success)
+        total_steps = sum(r.num_steps for r in results)
+        total_inference_time = sum(sum(r.inference_times) for r in results)
         
-#         success_rate = total_successes / total_episodes * 100
-#         avg_time_per_action = total_inference_time / total_steps * 1000  # ms
-#         throughput_hz = total_steps / total_inference_time
+        success_rate = total_successes / total_episodes * 100
+        avg_time_per_action = total_inference_time / total_steps * 1000  # ms
+        throughput_hz = total_steps / total_inference_time
         
-#         summary[mode] = {
-#             "success_rate": success_rate,
-#             "throughput_hz": throughput_hz,
-#             "avg_time_ms": avg_time_per_action,
-#             "total_episodes": total_episodes,
-#             "total_successes": total_successes,
-#             "total_steps": total_steps,
-#         }
+        summary[mode] = {
+            "success_rate": success_rate,
+            "throughput_hz": throughput_hz,
+            "avg_time_ms": avg_time_per_action,
+            "total_episodes": total_episodes,
+            "total_successes": total_successes,
+            "total_steps": total_steps,
+        }
         
-#         print(f"\n{mode.upper()}:")
-#         print(f"  Success Rate: {total_successes}/{total_episodes} ({success_rate:.1f}%)")
-#         print(f"  Throughput: {throughput_hz:.2f} Hz ({avg_time_per_action:.1f} ms/action)")
-#         print(f"  Total steps: {total_steps}")
+        print(f"\n{mode.upper()}:")
+        print(f"  Success Rate: {total_successes}/{total_episodes} ({success_rate:.1f}%)")
+        print(f"  Throughput: {throughput_hz:.2f} Hz ({avg_time_per_action:.1f} ms/action)")
+        print(f"  Total steps: {total_steps}")
         
-#         # Specdec-specific metrics
-#         if mode == "specdec":
-#             acceptance_rates = [r.acceptance_rate for r in results if r.acceptance_rate is not None]
-#             tokens_per_fwd = [r.tokens_per_target_forward for r in results if r.tokens_per_target_forward is not None]
+        # Specdec-specific metrics
+        if mode == "specdec":
+            acceptance_rates = [r.acceptance_rate for r in results if r.acceptance_rate is not None]
+            tokens_per_fwd = [r.tokens_per_target_forward for r in results if r.tokens_per_target_forward is not None]
             
-#             total_tokens = sum(r.total_tokens_generated for r in results)
-#             total_proposed = sum(r.total_draft_tokens_proposed for r in results)
-#             total_accepted = sum(r.total_draft_tokens_accepted for r in results)
-#             total_target_fwd = sum(r.total_target_forward_passes for r in results)
-#             total_draft_fwd = sum(r.total_draft_forward_passes for r in results)
+            total_tokens = sum(r.total_tokens_generated for r in results)
+            total_proposed = sum(r.total_draft_tokens_proposed for r in results)
+            total_accepted = sum(r.total_draft_tokens_accepted for r in results)
+            total_target_fwd = sum(r.total_target_forward_passes for r in results)
+            total_draft_fwd = sum(r.total_draft_forward_passes for r in results)
             
-#             overall_acceptance = total_accepted / total_proposed if total_proposed > 0 else 0
-#             overall_tokens_per_fwd = total_tokens / total_target_fwd if total_target_fwd > 0 else 0
+            overall_acceptance = total_accepted / total_proposed if total_proposed > 0 else 0
+            overall_tokens_per_fwd = total_tokens / total_target_fwd if total_target_fwd > 0 else 0
             
-#             summary[mode]["acceptance_rate"] = overall_acceptance
-#             summary[mode]["tokens_per_target_forward"] = overall_tokens_per_fwd
+            summary[mode]["acceptance_rate"] = overall_acceptance
+            summary[mode]["tokens_per_target_forward"] = overall_tokens_per_fwd
             
-#             print(f"  Overall Acceptance Rate: {overall_acceptance:.2%}")
-#             print(f"  Tokens per Target Forward: {overall_tokens_per_fwd:.2f}")
-#             print(f"  Total Target Forward Passes: {total_target_fwd}")
-#             print(f"  Total Draft Forward Passes: {total_draft_fwd}")
+            print(f"  Overall Acceptance Rate: {overall_acceptance:.2%}")
+            print(f"  Tokens per Target Forward: {overall_tokens_per_fwd:.2f}")
+            print(f"  Total Target Forward Passes: {total_target_fwd}")
+            print(f"  Total Draft Forward Passes: {total_draft_fwd}")
             
-#             if acceptance_rates:
-#                 print(f"  Per-episode Acceptance Rate: {np.mean(acceptance_rates):.2%} ± {np.std(acceptance_rates):.2%}")
+            if acceptance_rates:
+                print(f"  Per-episode Acceptance Rate: {np.mean(acceptance_rates):.2%} ± {np.std(acceptance_rates):.2%}")
     
-#     # Compute speedups
-#     if "target" in summary and "specdec" in summary:
-#         speedup = summary["specdec"]["throughput_hz"] / summary["target"]["throughput_hz"]
-#         print(f"\n{'='*80}")
-#         print(f"SPEEDUP (SpecDec vs Target): {speedup:.2f}x")
+    # Compute speedups
+    if "target" in summary and "specdec" in summary:
+        speedup = summary["specdec"]["throughput_hz"] / summary["target"]["throughput_hz"]
+        print(f"\n{'='*80}")
+        print(f"SPEEDUP (SpecDec vs Target): {speedup:.2f}x")
         
-#         # Check accuracy preservation
-#         sr_diff = summary["specdec"]["success_rate"] - summary["target"]["success_rate"]
-#         print(f"Success Rate Difference: {sr_diff:+.1f}% (specdec - target)")
+        # Check accuracy preservation
+        sr_diff = summary["specdec"]["success_rate"] - summary["target"]["success_rate"]
+        print(f"Success Rate Difference: {sr_diff:+.1f}% (specdec - target)")
         
-#         if abs(sr_diff) < 5:
-#             print("✓ Accuracy preserved (difference < 5%)")
-#         elif sr_diff < 0:
-#             print("⚠ Warning: SpecDec success rate is lower")
-#         else:
-#             print("✓ SpecDec success rate is higher")
+        if abs(sr_diff) < 5:
+            print("✓ Accuracy preserved (difference < 5%)")
+        elif sr_diff < 0:
+            print("⚠ Warning: SpecDec success rate is lower")
+        else:
+            print("✓ SpecDec success rate is higher")
     
-#     if "draft" in summary:
-#         draft_speedup = summary["draft"]["throughput_hz"] / summary.get("target", summary["draft"])["throughput_hz"]
-#         print(f"SPEEDUP (Draft vs Target): {draft_speedup:.2f}x")
+    if "draft" in summary:
+        draft_speedup = summary["draft"]["throughput_hz"] / summary.get("target", summary["draft"])["throughput_hz"]
+        print(f"SPEEDUP (Draft vs Target): {draft_speedup:.2f}x")
     
-#     print("=" * 80)
+    print("=" * 80)
     
-#     return summary
+    return summary
 
-# # Run the benchmark
-# print("Starting LIBERO rollout benchmark...")
-# print(f"Configuration: {rollout_cfg}")
+# Run the benchmark
+print("Starting LIBERO rollout benchmark...")
+print(f"Configuration: {rollout_cfg}")
 
-# rollout_results = run_libero_rollout_benchmark(rollout_cfg)
-# summary = analyze_and_print_results(rollout_results)
+rollout_results = run_libero_rollout_benchmark(rollout_cfg)
+summary = analyze_and_print_results(rollout_results)
 
 
-# def print_per_task_breakdown(all_results: dict):
-#     """Print success rate breakdown by task."""
-#     print("\n" + "=" * 80)
-#     print("PER-TASK SUCCESS RATE BREAKDOWN")
-#     print("=" * 80)
+# Optional: Per-task breakdown
+
+
+def print_per_task_breakdown(all_results: dict):
+    """Print success rate breakdown by task."""
+    print("\n" + "=" * 80)
+    print("PER-TASK SUCCESS RATE BREAKDOWN")
+    print("=" * 80)
     
-#     for mode in all_results.keys():
-#         results = all_results[mode]
-#         if not results: continue
+    for mode in all_results.keys():
+        results = all_results[mode]
+        if not results:
+            continue
         
-#         # Group by task_id
-#         tasks = {}
-#         for r in results:
-#             if r.task_id not in tasks:
-#                 tasks[r.task_id] = {"successes": 0, "total": 0, "description": r.task_description}
-#             tasks[r.task_id]["total"] += 1
-#             if r.success:
-#                 tasks[r.task_id]["successes"] += 1
+        # Group by task_id
+        tasks = {}
+        for r in results:
+            if r.task_id not in tasks:
+                tasks[r.task_id] = {"successes": 0, "total": 0, "description": r.task_description}
+            tasks[r.task_id]["total"] += 1
+            if r.success:
+                tasks[r.task_id]["successes"] += 1
         
-#         print(f"\n{mode.upper()}:")
-#         for task_id in sorted(tasks.keys()):
-#             t = tasks[task_id]
-#             sr = t["successes"] / t["total"] * 100
-#             desc = t["description"][:50] + "..." if len(t["description"]) > 50 else t["description"]
-#             print(f"  Task {task_id:2d}: {sr:5.1f}% ({t['successes']}/{t['total']}) - {desc}")
+        print(f"\n{mode.upper()}:")
+        for task_id in sorted(tasks.keys()):
+            t = tasks[task_id]
+            sr = t["successes"] / t["total"] * 100
+            desc = t["description"][:50] + "..." if len(t["description"]) > 50 else t["description"]
+            print(f"  Task {task_id:2d}: {sr:5.1f}% ({t['successes']}/{t['total']}) - {desc}")
 
-# # Uncomment to see per-task breakdown:
-# print_per_task_breakdown(rollout_results)
+# Uncomment to see per-task breakdown:
+print_per_task_breakdown(rollout_results)
 
 
+
+# %%
