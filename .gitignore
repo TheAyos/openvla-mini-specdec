@@ -160,3 +160,5 @@ experiments/logs/
 ft_experiments_logs/
 logs/training/
 adapter-tmp/
+experiments/specdec/minivla_profile_v1/
+experiments/specdec/minivla_profile/

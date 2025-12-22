@@ -158,6 +158,7 @@ class MiniVLAFastPath:
         compile_llm: bool = True,
         compile_mode: str = "default",
         compile_vision: bool = False,
+        compile_mode_vision: Optional[str] = None,
     ) -> None:
         self.model = model
         self.device = next(model.parameters()).device
@@ -175,6 +176,9 @@ class MiniVLAFastPath:
         # Optional compilation (best win: compile LLM only).
         self._compiled_llm = False
         self._compiled_vision = False
+        self._compile_mode_vision = compile_mode_vision if compile_mode_vision is not None else compile_mode
+
+        # TODO: try backends: ['cudagraphs', 'inductor', 'onnxrt', 'openxla', 'openxla_eval', 'tvm'] ???
         if compile_llm:
             self.model.llm_backbone.llm, self._compiled_llm = _maybe_compile(
                 self.model.llm_backbone.llm,
@@ -183,13 +187,15 @@ class MiniVLAFastPath:
                 fullgraph=False,
             )
         if compile_vision:
+            # TODO: why not both at once? examine àla profiler
+            # self.model.vision_backbone, self._compiled_vision = _maybe_compile(self.model.vision_backbone, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
+            # vb = self.model.vision_backbone
+            # vb.dino_featurizer, ok1 = _maybe_compile(vb.dino_featurizer, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
+            # vb.siglip_featurizer, ok2 = _maybe_compile(vb.siglip_featurizer, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
+            # self._compiled_vision = ok1 and ok2
             vb = self.model.vision_backbone
-            if hasattr(vb, "dino_featurizer") and hasattr(vb, "siglip_featurizer"):
-                vb.dino_featurizer, ok1 = _maybe_compile(vb.dino_featurizer, mode=compile_mode, dynamic=False, fullgraph=False)
-                vb.siglip_featurizer, ok2 = _maybe_compile(vb.siglip_featurizer, mode=compile_mode, dynamic=False, fullgraph=False)
-                self._compiled_vision = ok1 and ok2
-            elif hasattr(vb, "featurizer"):
-                vb.featurizer, self._compiled_vision = _maybe_compile(vb.featurizer, mode=compile_mode, dynamic=False, fullgraph=False)
+            vb, ok = _maybe_compile(vb, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
+            self._compiled_vision = ok
 
     def set_instruction(self, instruction: str) -> None:
         """Update the cached prompt/tokenization (call if instruction changes)."""
@@ -370,6 +376,7 @@ def main() -> None:
     ap.add_argument("--compile-llm", action="store_true")
     ap.add_argument("--compile-vision", action="store_true")
     ap.add_argument("--compile-mode", type=str, default="default")
+    ap.add_argument("--compile-mode-vision", type=str, default=None)
     ap.add_argument("--profile-dir", type=str, default=None)
     ap.add_argument("--profile-steps", type=int, default=5)
     ap.add_argument("--profile-include-compile", action="store_true")
@@ -393,6 +400,7 @@ def main() -> None:
         center_crop=args.center_crop,
         compile_llm=args.compile_llm,
         compile_mode=args.compile_mode,
+        compile_mode_vision=args.compile_mode_vision,
         compile_vision=args.compile_vision,
     )
 

@@ -7,7 +7,7 @@ The goal is to make MiniVLA predict actions as fast as possible.
 We test different optimization strategies and report the best one.
 
 Usage:
-    python -m experiments.specdec.optimize_minivla
+    python -m experiments.specdec.optimize_minivla_v0_preStaticKV_15Hz
 """
 
 import os
@@ -261,25 +261,25 @@ def main():
     del model
     torch.cuda.empty_cache()
     
-    # # ========================================================================
-    # # Test 2: torch.compile with default mode 15Hz nice
-    # # ========================================================================
-    # print("\n" + "=" * 70)
-    # print("TEST 2: torch.compile (default mode, dynamic shapes)")
-    # print("=" * 70)
+    # ========================================================================
+    # Test 2: torch.compile with default mode 15Hz nice
+    # ========================================================================
+    print("\n" + "=" * 70)
+    print("TEST 2: torch.compile (default mode, dynamic shapes)")
+    print("=" * 70)
     
-    # model = load_minivla(cfg.checkpoint, hf_token)
+    model = load_minivla(cfg.checkpoint, hf_token)
     
-    # if apply_torch_compile_default(model):
-    #     results["compile_default"] = benchmark_model(
-    #         model, test_image, test_instruction, cfg.unnorm_key,
-    #         cfg.num_iterations, cfg.warmup_iterations, "Compiled (default)"
-    #     )
-    #     print(f"\n  RESULT: {results['compile_default']['mean_ms']:.2f} ± {results['compile_default']['std_ms']:.2f} ms")
-    #     print(f"          {results['compile_default']['hz']:.2f} Hz")
+    if apply_torch_compile_default(model):
+        results["compile_default"] = benchmark_model(
+            model, test_image, test_instruction, cfg.unnorm_key,
+            cfg.num_iterations, cfg.warmup_iterations, "Compiled (default)"
+        )
+        print(f"\n  RESULT: {results['compile_default']['mean_ms']:.2f} ± {results['compile_default']['std_ms']:.2f} ms")
+        print(f"          {results['compile_default']['hz']:.2f} Hz")
     
-    # del model
-    # torch.cuda.empty_cache()
+    del model
+    torch.cuda.empty_cache()
     # ========================================================================
     # Test 2bis: torch.compile with default mode sdpa attn
     # ========================================================================
