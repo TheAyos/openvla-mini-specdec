@@ -395,25 +395,28 @@ def run_ablation(cfg: EvalConfig) -> Dict[str, Any]:
     Run a single ablation configuration and return results.
     Modified version of run() that returns metrics instead of just printing.
     """
-    # try:
-    #     import torch._dynamo  # type: ignore
-
-    #     torch._dynamo.reset()
-    # except Exception:
-    #     pass
-
-    # import gc
-    # gc.collect()
+    import gc
+    
+    # === CRITICAL: Reset torch.compile/Dynamo state between ablations ===
+    # Without this, compiled graphs from previous ablations interfere with new ones,
+    # causing wildly inconsistent results (e.g., 13.8Hz vs 6.4Hz for same config).
+    try:
+        import torch._dynamo
+        torch._dynamo.reset()
+    except Exception:
+        pass
+    
+    # Force garbage collection to free previous model/compiled modules
+    gc.collect()
+    
+    # Clear CUDA cache
     if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
         try:
-            torch.cuda.synchronize()
+            torch.cuda.ipc_collect()
         except Exception:
             pass
-        torch.cuda.empty_cache()
-    #     try:
-    #         torch.cuda.ipc_collect()
-    #     except Exception:
-    #         pass
         
     assert cfg.model_family == "prismatic", "This benchmark is for MiniVLA (prismatic) only."
     assert cfg.num_trials_per_task >= 1
@@ -563,7 +566,7 @@ def run_ablation(cfg: EvalConfig) -> Dict[str, Any]:
     # Compute summary statistics
     gpu_stats = _summarize_ms(all_policy_gpu_ms)
 
-    return {
+    result = {
         "config": {
             "compile_llm": cfg.compile_llm,
             "compile_vision": cfg.compile_vision,
@@ -578,6 +581,15 @@ def run_ablation(cfg: EvalConfig) -> Dict[str, Any]:
         "compilation_time_ms": compilation_time_ms,
         "all_policy_gpu_ms": all_policy_gpu_ms,
     }
+    
+    # === CRITICAL: Cleanup to prevent interference with subsequent ablations ===
+    # Delete model and compiled objects to free GPU memory and clear compiled state
+    del fast
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    return result
 
 # %%
 # Define ablation configurations
@@ -601,7 +613,10 @@ ablation_configs = [
 
 # %%
 # Run all ablations
+import time as time_module  # for delays between ablations
 ablation_results = []
+
+DELAY_BETWEEN_ABLATIONS_SEC = 2.0  # Let GPU settle between ablations
 
 for i, ablation in enumerate(ablation_configs):
     print(f"\n{'='*80}")
@@ -628,6 +643,10 @@ for i, ablation in enumerate(ablation_configs):
         print(f"First-call (compilation) time: {result['compilation_time_ms']:.2f} ms")
     if result["gpu_stats"]:
         print(f"GPU Hz: {result['gpu_stats'].get('hz', 'N/A'):.2f}")
+    
+    # Delay between ablations to let GPU settle (helps with thermal throttling, memory cleanup)
+    if i < len(ablation_configs) - 1:
+        time_module.sleep(DELAY_BETWEEN_ABLATIONS_SEC)
 
 print(f"\n{'='*80}")
 print("All ablations complete!")

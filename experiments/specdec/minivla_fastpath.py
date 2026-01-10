@@ -187,15 +187,12 @@ class MiniVLAFastPath:
                 fullgraph=False,
             )
         if compile_vision:
-            # TODO: why not both at once? examine àla profiler
-            # self.model.vision_backbone, self._compiled_vision = _maybe_compile(self.model.vision_backbone, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
-            # vb = self.model.vision_backbone
-            # vb.dino_featurizer, ok1 = _maybe_compile(vb.dino_featurizer, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
-            # vb.siglip_featurizer, ok2 = _maybe_compile(vb.siglip_featurizer, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
-            # self._compiled_vision = ok1 and ok2
-            vb = self.model.vision_backbone
-            vb, ok = _maybe_compile(vb, mode=self._compile_mode_vision, dynamic=False, fullgraph=False)
-            self._compiled_vision = ok
+            self.model.vision_backbone, self._compiled_vision = _maybe_compile(
+                self.model.vision_backbone,
+                mode=self._compile_mode_vision,
+                dynamic=False,
+                fullgraph=False,
+            )
 
     def set_instruction(self, instruction: str) -> None:
         """Update the cached prompt/tokenization (call if instruction changes)."""
