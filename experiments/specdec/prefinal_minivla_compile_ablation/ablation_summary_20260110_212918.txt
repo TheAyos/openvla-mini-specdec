@@ -1,0 +1,20 @@
+
+====================================================================================================
+FINAL ABLATION SUMMARY
+====================================================================================================
+
+Configuration                       Success Rate     GPU Hz  GPU Speedup   Compile (ms)
+----------------------------------------------------------------------------------------------------
+Baseline (no compile)                     100.0%       8.97        1.00x          275.0
+LLM only (default)                        100.0%      13.76        1.77x       170031.3
+LLM only (max-autotune)                   100.0%      13.39        1.77x       188011.7
+Vision only (default)                     100.0%       9.68        1.75x        20940.5
+Vision only (max-autotune)                100.0%       9.71        1.73x        23785.6
+Vision only (reduce-overhead)             100.0%      10.27        1.53x        22112.2
+LLM+Vision (default)                      100.0%      15.88        1.49x       191134.5
+LLM+Vision (max-autotune)                 100.0%      15.51        1.15x       211471.9
+LLM(default)+Vision(max-autotune)         100.0%      15.85        1.08x       187194.2
+LLM(default)+Vision(reduce-overhead)       100.0%      15.71        1.08x       189516.3
+====================================================================================================
+
+Best GPU throughput: LLM+Vision (default) (15.88 Hz)
