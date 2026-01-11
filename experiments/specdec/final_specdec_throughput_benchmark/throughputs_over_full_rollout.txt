@@ -1,0 +1,33 @@
+================================================================================
+RESULTS (Full Rollout)
+================================================================================
+
+TARGET:
+  Mean time: 181.99 ms
+  Throughput: 5.49 Hz
+  Steps: 117, Success: True
+
+DRAFT:
+  Mean time: 58.07 ms
+  Throughput: 17.22 Hz
+  Steps: 63, Success: True
+
+SPECULATIVE DECODING (gamma=6, r=0):
+  Mean time: 399.63 ms
+  Throughput: 2.50 Hz
+  Acceptance rate: 27.48%
+  Tokens/target forward: 0.96
+  Steps: 115, Success: True
+
+SPEEDUPS:
+  SpecDec vs Target: 0.46x
+  Draft vs Target: 3.13x
+
+OVERALL SPECDEC STATS (across rollout):
+  Total tokens generated: 805
+  Total draft tokens proposed: 1106
+  Total draft tokens accepted: 304
+  Overall acceptance rate: 27.49%
+  Total target forward passes: 848
+  Total draft forward passes: 1338
+================================================================================
