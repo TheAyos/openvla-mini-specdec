@@ -1,3 +1,27 @@
+# Inference Optimization of Vision-Language-Action Models through Speculative Decoding
+
+This repository accompanies the semester research project *Inference Optimization of Vision-Language-Action Models through Speculative Decoding* (September–December 2025) conducted under supervision of Dr. Wenqi Jiang at the Systems Group at ETH Zürich.
+
+## Project Overview
+
+We investigate whether naive speculative decoding can accelerate autoregressive VLA inference by pairing **MiniVLA** (draft) with **OpenVLA** (target). Key contributions include:
+
+- A batched speculative decoder for VLAs with KV-cache verification and cross-tokenizer token remapping (`VLASpeculativeDecoderBatchedLM` class in `experiments/specdec/final_specdec_throughput_benchmark/benchmark_specdec_throughput_rollout_final.py`),
+- An optimized MiniVLA inference path with instruction caching and selective `torch.compile`, reaching ~16 Hz on an H100 NVL (`experiments/specdec/minivla_fastpath.py`),
+- Empirical ablations over speculation depth and relaxed acceptance (`experiments/specdec/final_minivla_compile_ablation`, `experiments/specdec/final_specdec_throughput_benchmark`), plus a [GenZ](https://github.com/abhibambhaniya/GenZ-LLM-Analyzer/tree/main)-based roofline analysis explaining why vanilla speculative decoding yields net slowdowns under current cost ratios and acceptance rates.
+
+See [**`report/`**](https://github.com/TheAyos/openvla-mini-specdec/report) for the full LaTeX source of the project report as well as a compiled PDF file.
+
+## Repository Structure
+
+The project's code is based on a fork of the original [MiniVLA repository](https://github.com/Stanford-ILIAD/openvla-mini). Main additions are under:
+- [`experiments/specdec/`](https://github.com/TheAyos/openvla-mini-specdec/experiments/specdec): Speculative decoding implementation, throughput benchmarks, and analysis notebooks, and
+- [`report/`](https://github.com/TheAyos/openvla-mini-specdec/report): LaTeX source and compiled PDF of the project report.
+
+**The remainder of this README is the original MiniVLA documentation, retained for reference.**
+
+---
+
 # OpenVLA: An Open-Source Vision-Language-Action Model
 
 **Note: For MiniVLA, see the links in Latest Updates below!**
